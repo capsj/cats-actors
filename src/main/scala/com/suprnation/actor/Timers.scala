@@ -17,6 +17,7 @@
 package com.suprnation.actor
 
 import cats.effect.{Async, Ref}
+import cats.effect.implicits._
 import cats.implicits.{catsSyntaxFlatMapOps, catsSyntaxIfM, toFlatMapOps}
 import com.suprnation.actor.Actor.{Actor, Receive}
 import com.suprnation.actor.dungeon.{TimerScheduler, TimerSchedulerImpl}
@@ -24,12 +25,19 @@ import com.suprnation.actor.dungeon.TimerSchedulerImpl.{StoredTimer, Timer}
 
 import scala.util.Try
 
+object Timers {
+  type TimerMap[F[+_], Key] = Map[Key, StoredTimer[F]]
+
+  def initGenRef[F[+_]: Async]: F[Ref[F, Int]] = Ref[F].of(0)
+  def initTimersRef[F[+_]: Async, Key]: F[Ref[F, Timers.TimerMap[F, Key]]] = Ref[F].of(Map[Key, StoredTimer[F]]())
+}
+
 trait Timers[F[+_], Request, Key] extends Actor[F, Request] {
 
   implicit def asyncEvidence: Async[F]
 
   protected val timerGenRef: Ref[F, Int]
-  protected val timersRef: Ref[F, Map[Key, StoredTimer[F]]]
+  protected val timersRef: Ref[F, Timers.TimerMap[F, Key]]
 
   private lazy val _timers =
     new TimerSchedulerImpl[F, Request, Key](timerGenRef, timersRef, context)
