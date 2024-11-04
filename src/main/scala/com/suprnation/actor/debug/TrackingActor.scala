@@ -17,13 +17,12 @@
 package com.suprnation.actor.debug
 
 import cats.Parallel
-import cats.effect.{Async, Concurrent, Ref, Temporal}
+import cats.effect.{Concurrent, Ref, Temporal}
 import cats.implicits._
 import com.suprnation.actor.Actor.ReplyingReceive
-import com.suprnation.actor.Timers.TimerMap
 import com.suprnation.actor.dungeon.TimerSchedulerImpl.Timer
 import com.suprnation.actor.utils.Unsafe
-import com.suprnation.actor.{ActorConfig, ReplyingActor, SupervisionStrategy, SystemCommand, Timers}
+import com.suprnation.actor.{ActorConfig, ReplyingActor, SupervisionStrategy}
 
 import scala.collection.immutable.Queue
 
