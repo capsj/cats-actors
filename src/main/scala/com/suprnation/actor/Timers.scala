@@ -29,7 +29,8 @@ object Timers {
   type TimerMap[F[+_], Key] = Map[Key, StoredTimer[F]]
 
   def initGenRef[F[+_]: Async]: F[Ref[F, Int]] = Ref[F].of(0)
-  def initTimersRef[F[+_]: Async, Key]: F[Ref[F, Timers.TimerMap[F, Key]]] = Ref[F].of(Map[Key, StoredTimer[F]]())
+  def initTimersRef[F[+_]: Async, Key]: F[Ref[F, Timers.TimerMap[F, Key]]] =
+    Ref[F].of(Map[Key, StoredTimer[F]]())
 }
 
 trait Timers[F[+_], Request, Response, Key] extends ReplyingActor[F, Request, Response] {

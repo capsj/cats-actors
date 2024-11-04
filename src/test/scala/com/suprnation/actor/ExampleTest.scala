@@ -29,12 +29,16 @@ class TimerExampleSpec extends AsyncFlatSpec with Matchers with TestKit {
         for {
           timerGenRef <- Timers.initGenRef[IO]
           timersRef <- Timers.initTimersRef[IO, String]
-          cache <- ActorRefs.empty[IO].map(_.copy(
-            timerGenRef = timerGenRef,
-            timersRef = timersRef
-          ))
+          cache <- ActorRefs
+            .empty[IO]
+            .map(
+              _.copy(
+                timerGenRef = timerGenRef,
+                timersRef = timersRef
+              )
+            )
           stableName = "tracker"
-          cacheMap <- Ref.of[IO,Map[String, ActorRefs[IO]]](Map(stableName -> cache))
+          cacheMap <- Ref.of[IO, Map[String, ActorRefs[IO]]](Map(stableName -> cache))
           actorRef <- actorSystem.actorOf(
             TrackingActor.create[IO, Any, Any](
               cache = cacheMap,
@@ -48,12 +52,11 @@ class TimerExampleSpec extends AsyncFlatSpec with Matchers with TestKit {
       }
       .unsafeToFuture()
 
-
   "receiveWhile" should "receive Hellos until we hit Enough" in {
     testExample { case (_, actorRef) =>
       for {
-        receivedMessage <- receiveWhile(actorRef, 1 second) {
-          case req: Request => req
+        receivedMessage <- receiveWhile(actorRef, 1 second) { case req: Request =>
+          req
         }
       } yield {
         receivedMessage.distinct should have size 2

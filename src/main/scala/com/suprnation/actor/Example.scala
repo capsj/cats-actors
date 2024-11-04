@@ -127,27 +127,28 @@ object TimerExample extends IOApp {
   case object Enough extends Request
 
   case class TimerActor(
-    interval: FiniteDuration,
-    stopAfter: FiniteDuration,
-    timerGenRef: Ref[IO, Int],
-    timersRef: Ref[IO, Timers.TimerMap[IO, String]]
-  ) extends Actor[IO, Request] with Timers[IO, Request, Any, String] {
+      interval: FiniteDuration,
+      stopAfter: FiniteDuration,
+      timerGenRef: Ref[IO, Int],
+      timersRef: Ref[IO, Timers.TimerMap[IO, String]]
+  ) extends Actor[IO, Request]
+      with Timers[IO, Request, Any, String] {
 
     implicit def asyncEvidence: Async[IO] = cats.effect.IO.asyncForIO
 
-    override def receive: Receive[IO, Request] = { 
+    override def receive: Receive[IO, Request] = {
       case Hello =>
         IO.println(s"Hello, World! Another $interval has passed.")
       case Enough =>
-        IO.println(s"Ok, that's enough") *> 
+        IO.println(s"Ok, that's enough") *>
           timers.cancel("My Timer!") *>
           context.stop(self)
     }
 
-    override def preStart: IO[Unit] = 
+    override def preStart: IO[Unit] =
       timers.startTimerWithFixedDelay("My Timer!", Hello, interval) *>
         timers.startSingleTimer("Somebody stop me!", Enough, stopAfter)
-      
+
   }
 
   override def run(args: List[String]): IO[ExitCode] =
@@ -156,7 +157,9 @@ object TimerExample extends IOApp {
         for {
           timerGenRef <- Timers.initGenRef[IO]
           timersRef <- Timers.initTimersRef[IO, String]
-          actor <- system.actorOf(TimerActor(1.second, 5.seconds + 50.millis, timerGenRef, timersRef))
+          actor <- system.actorOf(
+            TimerActor(1.second, 5.seconds + 50.millis, timerGenRef, timersRef)
+          )
           _ <- IO.sleep(6.seconds)
         } yield ExitCode.Success
       }

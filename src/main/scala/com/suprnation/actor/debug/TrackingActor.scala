@@ -27,22 +27,22 @@ import scala.collection.immutable.Queue
 
 object TrackingActor {
   case class ActorRefs[F[+_]](
-    initCountRef: Ref[F, Int],
-    preStartCountRef: Ref[F, Int],
-    postStopCountRef: Ref[F, Int],
-    preRestartCountRef: Ref[F, Int],
-    postRestartCountRef: Ref[F, Int],
-    preSuspendCountRef: Ref[F, Int],
-    preResumeCountRef: Ref[F, Int],
-    messageBufferRef: Ref[F, Queue[Any]],
-    restartMessageBufferRef: Ref[F, Queue[(Option[Throwable], Option[Any])]],
-    errorMessageBufferRef: Ref[F, Queue[(Throwable, Option[Any])]],
-    timerGenRef: Ref[F, Int],
-    timersRef: Ref[F, Timers.TimerMap[F, String]],
+      initCountRef: Ref[F, Int],
+      preStartCountRef: Ref[F, Int],
+      postStopCountRef: Ref[F, Int],
+      preRestartCountRef: Ref[F, Int],
+      postRestartCountRef: Ref[F, Int],
+      preSuspendCountRef: Ref[F, Int],
+      preResumeCountRef: Ref[F, Int],
+      messageBufferRef: Ref[F, Queue[Any]],
+      restartMessageBufferRef: Ref[F, Queue[(Option[Throwable], Option[Any])]],
+      errorMessageBufferRef: Ref[F, Queue[(Throwable, Option[Any])]],
+      timerGenRef: Ref[F, Int],
+      timersRef: Ref[F, Timers.TimerMap[F, String]]
   )
 
   object ActorRefs {
-    def empty[F[+_] : Async]: F[ActorRefs[F]] = (
+    def empty[F[+_]: Async]: F[ActorRefs[F]] = (
       Ref.of[F, Int](0),
       Ref.of[F, Int](0),
       Ref.of[F, Int](0),
@@ -60,15 +60,15 @@ object TrackingActor {
     ).mapN(ActorRefs.apply)
   }
 
-  def create[F[+_] : Async : Parallel, Request, Response](
-    proxy: ReplyingActor[F, Request, Response]
+  def create[F[+_]: Async: Parallel, Request, Response](
+      proxy: ReplyingActor[F, Request, Response]
   ): F[TrackingActor[F, Request, Response]] =
     createInner[F, Request, Response](proxy)(_ => Concurrent[F].unit)
 
-  def create[F[+_] : Async : Parallel, Request, Response](
-    cache: Ref[F, Map[String, ActorRefs[F]]],
-    stableName: String,
-    proxy: ReplyingActor[F, Request, Response]
+  def create[F[+_]: Async: Parallel, Request, Response](
+      cache: Ref[F, Map[String, ActorRefs[F]]],
+      stableName: String,
+      proxy: ReplyingActor[F, Request, Response]
   ): F[TrackingActor[F, Request, Response]] =
     cache.get.flatMap { currentCache =>
       currentCache.get(stableName) match {
@@ -94,10 +94,10 @@ object TrackingActor {
       }
     }
 
-  private def createInner[F[+_] : Async : Parallel : Concurrent : Temporal, Request, Response](
-    proxy: ReplyingActor[F, Request, Response]
-  )(preCreateFn: ActorRefs[F] => F[Unit]): F[TrackingActor[F, Request, Response]] = {
-    ActorRefs.empty.flatMap({ cache =>
+  private def createInner[F[+_]: Async: Parallel: Concurrent: Temporal, Request, Response](
+      proxy: ReplyingActor[F, Request, Response]
+  )(preCreateFn: ActorRefs[F] => F[Unit]): F[TrackingActor[F, Request, Response]] =
+    ActorRefs.empty.flatMap { cache =>
       preCreateFn(cache).as(
         new TrackingActor[F, Request, Response](
           cache.initCountRef,
@@ -115,32 +115,30 @@ object TrackingActor {
           proxy
         )
       )
-    })
-  }
+    }
 }
 
-final case class TrackingActor[F[+_] : Async : Parallel : Concurrent : Temporal, Request, Response](
-  initCountRef: Ref[F, Int],
-  preStartCountRef: Ref[F, Int],
-  postStopCountRef: Ref[F, Int],
-  preRestartCountRef: Ref[F, Int],
-  postRestartCountRef: Ref[F, Int],
-  preSuspendCountRef: Ref[F, Int],
-  preResumeCountRef: Ref[F, Int],
-  messageBufferRef: Ref[F, Queue[Any]],
-  restartMessageBufferRef: Ref[F, Queue[(Option[Throwable], Option[Any])]],
-  errorMessageBufferRef: Ref[F, Queue[(Throwable, Option[Any])]],
-  timerGenRef: Ref[F, Int],
-  timersRef: Ref[F, Timers.TimerMap[F, String]],
-  proxy: ReplyingActor[F, Request, Response]
+final case class TrackingActor[F[+_]: Async: Parallel: Concurrent: Temporal, Request, Response](
+    initCountRef: Ref[F, Int],
+    preStartCountRef: Ref[F, Int],
+    postStopCountRef: Ref[F, Int],
+    preRestartCountRef: Ref[F, Int],
+    postRestartCountRef: Ref[F, Int],
+    preSuspendCountRef: Ref[F, Int],
+    preResumeCountRef: Ref[F, Int],
+    messageBufferRef: Ref[F, Queue[Any]],
+    restartMessageBufferRef: Ref[F, Queue[(Option[Throwable], Option[Any])]],
+    errorMessageBufferRef: Ref[F, Queue[(Throwable, Option[Any])]],
+    timerGenRef: Ref[F, Int],
+    timersRef: Ref[F, Timers.TimerMap[F, String]],
+    proxy: ReplyingActor[F, Request, Response]
 ) extends ReplyingActor[F, Request, Response]
-  with ActorConfig
-  with Timers[F, Request, Response, String] {
+    with ActorConfig
+    with Timers[F, Request, Response, String] {
   override val asyncEvidence: Async[F] = implicitly[Async[F]]
 
-  override val receive: ReplyingReceive[F, Request, Response] = {
-    case m =>
-      messageBufferRef.update(_ :+ m) >> proxy.receive(m)
+  override val receive: ReplyingReceive[F, Request, Response] = { case m =>
+    messageBufferRef.update(_ :+ m) >> proxy.receive(m)
   }
 
   override def supervisorStrategy: SupervisionStrategy[F] = proxy.supervisorStrategy
