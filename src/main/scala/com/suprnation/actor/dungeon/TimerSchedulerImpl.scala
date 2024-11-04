@@ -133,7 +133,10 @@ private[actor] class TimerSchedulerImpl[F[+_]: Async, Request, Response, Key](
 
   def cancel(key: Key): F[Unit] =
     timersRef.flatModify { timers =>
-      (timers - key, timers.get(key).map(_.cancel).getOrElse(Async[F].unit))
+      (
+        timers - key,
+        timers.get(key).map(_.cancel).getOrElse(Async[F].unit)
+      )
     }
 
   def cancelAll: F[Unit] =
