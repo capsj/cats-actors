@@ -42,12 +42,12 @@ class TimerExampleSpec extends AsyncFlatSpec with Matchers with TestKit {
   "receiveWhile" should "receive Hellos until we hit Enough" in {
     testExample { case (_, actorRef) =>
       for {
-        receivedMessage <- receiveWhile(actorRef, 1 second) { case Hello =>
-          Hello
+        receivedMessage <- receiveWhile(actorRef, 1 second) {
+          case req: Request => req
         }
       } yield {
-        receivedMessage should have size 2
-        receivedMessage shouldBe Seq(Hello, Hello, Hello, Hello, Hello)
+        receivedMessage.distinct should have size 2
+        receivedMessage shouldBe Seq(Hello, Hello, Hello, Hello, Hello, Enough)
       }
     }
   }

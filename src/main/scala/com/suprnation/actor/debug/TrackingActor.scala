@@ -17,11 +17,14 @@
 package com.suprnation.actor.debug
 
 import cats.Parallel
-import cats.effect.{Concurrent, Ref, Temporal}
+import cats.effect.{Async, Concurrent, Ref, Temporal}
 import cats.implicits._
 import com.suprnation.actor.Actor.ReplyingReceive
+import com.suprnation.actor.Timers.TimerMap
+import com.suprnation.actor.dungeon.TimerSchedulerImpl.Timer
 import com.suprnation.actor.utils.Unsafe
-import com.suprnation.actor.{ActorConfig, ReplyingActor, SupervisionStrategy}
+import com.suprnation.actor.{ActorConfig, ReplyingActor, SupervisionStrategy, SystemCommand, Timers}
+
 import scala.collection.immutable.Queue
 
 object TrackingActor {
@@ -146,8 +149,11 @@ final case class TrackingActor[F[+_]: Parallel: Concurrent: Temporal, Request, R
 ) extends ReplyingActor[F, Request, Response]
     with ActorConfig {
 
-  override val receive: ReplyingReceive[F, Request, Response] = { case m =>
-    messageBufferRef.update(_ :+ m) >> proxy.receive(m)
+  override val receive: ReplyingReceive[F, Request, Response] = {
+    case _ @ Timer(_, m, _, _, _) =>
+      messageBufferRef.update(_ :+ m) >> proxy.receive(m.asInstanceOf[Request])
+    case m =>
+      messageBufferRef.update(_ :+ m) >> proxy.receive(m)
   }
 
   override def supervisorStrategy: SupervisionStrategy[F] = proxy.supervisorStrategy
