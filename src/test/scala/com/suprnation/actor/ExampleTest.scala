@@ -1,9 +1,11 @@
 package com.suprnation.actor
 
 import cats.effect.IO
+import cats.effect.kernel.Ref
 import cats.effect.unsafe.implicits.global
 import com.suprnation.actor.ActorRef.ActorRef
 import com.suprnation.actor.debug.TrackingActor
+import com.suprnation.actor.debug.TrackingActor.ActorRefs
 import com.suprnation.actor.{Actor, ActorSystem}
 import com.suprnation.actor.test.TestKit
 import com.suprnation.actor.dungeon.TimerSchedulerImpl
@@ -27,9 +29,17 @@ class TimerExampleSpec extends AsyncFlatSpec with Matchers with TestKit {
         for {
           timerGenRef <- Timers.initGenRef[IO]
           timersRef <- Timers.initTimersRef[IO, String]
+          cache <- ActorRefs.empty[IO].map(_.copy(
+            timerGenRef = timerGenRef,
+            timersRef = timersRef
+          ))
+          stableName = "tracker"
+          cacheMap <- Ref.of[IO,Map[String, ActorRefs[IO]]](Map(stableName -> cache))
           actorRef <- actorSystem.actorOf(
             TrackingActor.create[IO, Any, Any](
-              TimerActor(100.millis, 550.millis, timerGenRef, timersRef).widen[Any]
+              cache = cacheMap,
+              stableName = stableName,
+              proxy = TimerActor(100.millis, 550.millis, timerGenRef, timersRef).widen[Any]
             )
           )
 

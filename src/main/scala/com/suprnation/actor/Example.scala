@@ -131,7 +131,7 @@ object TimerExample extends IOApp {
     stopAfter: FiniteDuration,
     timerGenRef: Ref[IO, Int],
     timersRef: Ref[IO, Timers.TimerMap[IO, String]]
-  ) extends Actor[IO, Request] with Timers[IO, Request, String] {
+  ) extends Actor[IO, Request] with Timers[IO, Request, Any, String] {
 
     implicit def asyncEvidence: Async[IO] = cats.effect.IO.asyncForIO
 

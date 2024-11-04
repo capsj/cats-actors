@@ -32,7 +32,7 @@ object Timers {
   def initTimersRef[F[+_]: Async, Key]: F[Ref[F, Timers.TimerMap[F, Key]]] = Ref[F].of(Map[Key, StoredTimer[F]]())
 }
 
-trait Timers[F[+_], Request, Key] extends Actor[F, Request] {
+trait Timers[F[+_], Request, Response, Key] extends ReplyingActor[F, Request, Response] {
 
   implicit def asyncEvidence: Async[F]
 
@@ -40,7 +40,7 @@ trait Timers[F[+_], Request, Key] extends Actor[F, Request] {
   protected val timersRef: Ref[F, Timers.TimerMap[F, Key]]
 
   private lazy val _timers =
-    new TimerSchedulerImpl[F, Request, Key](timerGenRef, timersRef, context)
+    new TimerSchedulerImpl[F, Request, Response, Key](timerGenRef, timersRef, context)
   final def timers: TimerScheduler[F, Request, Key] = _timers
 
   override def aroundPreRestart(reason: Option[Throwable], message: Option[Any]): F[Unit] =

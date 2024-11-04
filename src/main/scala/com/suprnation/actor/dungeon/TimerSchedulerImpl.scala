@@ -96,10 +96,10 @@ private[actor] object TimerSchedulerImpl {
   }
 }
 
-private[actor] class TimerSchedulerImpl[F[+_]: Async, Request, Key](
+private[actor] class TimerSchedulerImpl[F[+_]: Async, Request, Response, Key](
     private val timerGenRef: Ref[F, Int],
     private val timersRef: Ref[F, Map[Key, StoredTimer[F]]],
-    private val context: ActorContext[F, Request, Any]
+    private val context: ActorContext[F, Request, Response]
 ) extends TimerScheduler[F, Request, Key] {
 
   private lazy val self: ActorRef[F, Request] = context.self
@@ -142,7 +142,8 @@ private[actor] class TimerSchedulerImpl[F[+_]: Async, Request, Key](
     }
 
   def interceptTimerMsg(t: Timer[F, Request, Key]): F[Boolean] =
-    if (!(t.owner eq self)) Async[F].pure(false)
+    if (!(t.owner eq self))
+      Async[F].pure(false)
     else
       timersRef.get
         .map(_.get(t.key).exists(_.generation == t.generation))

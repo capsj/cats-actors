@@ -185,7 +185,7 @@ object TimersTest {
       timerGenRef: Ref[IO, Int],
       timersRef: Ref[IO, Map[Key, TimerSchedulerImpl.StoredTimer[IO]]]
   ) extends ReplyingActor[IO, TimerMsg, Any]
-      with Timers[IO, TimerMsg, Key] {
+      with Timers[IO, TimerMsg, Any, Key] {
     override val asyncEvidence: Async[IO] = implicitly[Async[IO]]
 
     override def receive: Receive[IO, TimerMsg] = {
