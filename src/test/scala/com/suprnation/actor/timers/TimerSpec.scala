@@ -37,7 +37,7 @@ import com.suprnation.actor.{
   SupervisionStrategy,
   Timers
 }
-import com.suprnation.typelevel.actors.syntax.ActorSyntaxFOps
+import com.suprnation.typelevel.actors.syntax.{ActorSyntaxFOps, ActorSystemDebugOps}
 import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
 
@@ -51,7 +51,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
 
   it should "schedule a single message" in {
     val count: Int =
-      fixture(TimedActor.apply) { case FixtureParams(parentActor, trackerActor) =>
+      fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         (parentActor ! startTimerA) >>
           expectMsgs(trackerActor, 150.millis)(counterAddA)
       }
@@ -61,18 +61,20 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
 
   it should "schedule repeated messages" in {
     val count: Int =
-      fixture(TimedActor.apply) { case FixtureParams(parentActor, trackerActor) =>
+      fixture(TimedActor.apply) { case FixtureParams(actorSystem, parentActor, trackerActor) =>
         (parentActor ! StartTimer(KeyA, 150.millis, TimerMode.FixedDelay)) >>
-          expectMsgs(trackerActor, 450.millis)(ArraySeq.fill(3)(counterAddA): _*) // >>
-//          (parentActor ! CancelTimer(KeyA))
+          expectMsgs(trackerActor, 450.millis)(ArraySeq.fill(3)(counterAddA): _*) >>
+          (parentActor ! CancelTimer(KeyA)) >>
+          actorSystem.waitForIdle(maxTimeout = 500.millis).void
       }
 
+    println(s"Received final count: ${count}")
     count shouldEqual 3
   }
 
   it should "replace timers with the same key" in {
     val count: Int =
-      fixture(TimedActor) { case FixtureParams(parentActor, trackerActor) =>
+      fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         (parentActor ! startTimerA) >>
           (parentActor ! startTimerA) >>
           (parentActor ! startTimerA) >>
@@ -84,7 +86,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
 
   it should "support timers with different keys" in {
     val count: Int =
-      fixture(TimedActor) { case FixtureParams(parentActor, trackerActor) =>
+      fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         (parentActor ! startTimerA) >>
           (parentActor ! StartTimer(KeyB, 150.millis, TimerMode.Single)) >>
           expectMsgs(trackerActor, 200.millis)(counterAddA, CounterAdd(KeyB))
@@ -95,7 +97,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
 
   it should "cancel timers" in {
     val count: Int =
-      fixture(TimedActor) { case FixtureParams(parentActor, trackerActor) =>
+      fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         (parentActor ! startTimerA) >>
           (parentActor ! CancelTimer(KeyA)) >>
           expectNoMsg(trackerActor, 150.millis)
@@ -106,7 +108,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
 
   it should "cancel all timers on restart" in {
     val count: Int =
-      fixture(TimedActor) { case FixtureParams(parentActor, trackerActor) =>
+      fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         (parentActor ! startTimerA) >>
           (parentActor ! RestartCommand) >>
           expectNoMsg(trackerActor, 150.millis)
@@ -117,7 +119,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
 
   it should "cancel all timers on stop" in {
     val count: Int =
-      fixture(TimedActor) { case FixtureParams(parentActor, trackerActor) =>
+      fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         (parentActor ! startTimerA) >>
           (parentActor ! StopCommand) >>
           expectNoMsg(trackerActor, 150.millis)
@@ -128,7 +130,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
 
   it should "support replying actors" in {
     val count: Int =
-      fixture(ReplyingTimedActor) { case FixtureParams(parentActor, trackerActor) =>
+      fixture(ReplyingTimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         for {
           reply <- parentActor ? startTimerA
           _ <- expectMsgs(trackerActor, 150.millis)(counterAddA)
@@ -179,6 +181,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
   }
 
   private case class FixtureParams[Response](
+      actorSystem: ActorSystem[IO],
       parentActor: ReplyingActorRef[IO, TimerMsg, Response],
       trackerActor: ActorRef[IO, Any]
   )
@@ -190,7 +193,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
           Ref[IO, Int],
           Ref[IO, Map[Key, StoredTimer[IO]]]
       ) => ReplyingActor[IO, TimerMsg, Response]
-  )(test: FixtureParams[Response] => IO[Unit]): Int = {
+  )(test: FixtureParams[Any] => IO[Unit]): Int = {
 
     def deadLetterListener(countRef: Ref[IO, Int]): Any => IO[Unit] = {
       case Debug(_, _, DeadLetter(_, _, _)) =>
@@ -220,7 +223,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
                       createF.apply(countRef, trackerActor, timerGenRef, timersRef)
                   }
                 )
-              _ <- test(FixtureParams(parentActor, trackerActor))
+              _ <- test(FixtureParams(system, parentActor, trackerActor))
               count <- countRef.get
             } yield count
           }
@@ -253,7 +256,7 @@ object TimersTest {
       trackerActor: ActorRef[IO, Any],
       timerGenRef: Ref[IO, Int],
       timersRef: Ref[IO, Map[Key, TimerSchedulerImpl.StoredTimer[IO]]]
-  ) extends ReplyingActor[IO, TimerMsg, Any]
+  ) extends Actor[IO, TimerMsg]
       with Timers[IO, TimerMsg, Any, Key] {
     override val asyncEvidence: Async[IO] = implicitly[Async[IO]]
 
