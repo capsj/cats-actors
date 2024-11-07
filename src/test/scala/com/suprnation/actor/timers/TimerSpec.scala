@@ -19,40 +19,32 @@ package com.suprnation.actor.timers
 import cats.effect.unsafe.implicits.global
 import cats.effect.{Async, IO, Ref}
 import com.suprnation.actor.Actor.{Actor, Receive, ReplyingReceive}
-import com.suprnation.actor.ActorRef.ActorRef
 import com.suprnation.actor.SupervisorStrategy.{Restart, Stop}
+import com.suprnation.actor.Timers.TimerMap
 import com.suprnation.actor.debug.TrackingActor
 import com.suprnation.actor.debug.TrackingActor.ActorRefs
-import com.suprnation.actor.dungeon.TimerSchedulerImpl
 import com.suprnation.actor.event.Debug
 import com.suprnation.actor.test.TestKit
 import com.suprnation.actor.timers.TimersTest._
-import com.suprnation.actor.{
-  ActorSystem,
-  DeadLetter,
-  OneForOneStrategy,
-  ReplyingActor,
-  ReplyingActorRef,
-  SupervisionStrategy,
-  Timers
-}
-import com.suprnation.typelevel.actors.syntax.{ActorSyntaxFOps, ActorSystemDebugOps}
+import com.suprnation.actor.{ActorSystem, DeadLetter, OneForOneStrategy, ReplyingActor, ReplyingActorRef, SupervisionStrategy, Timers}
+import com.suprnation.typelevel.actors.syntax.ActorSystemDebugOps
 import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-import scala.collection.immutable.ArraySeq
+import java.util.UUID
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
 
-  val startTimerA: StartSingleTimer = StartSingleTimer(KeyA, 100.millis)
-  val counterAddA: CounterAdd = CounterAdd(KeyA)
+  val startTimerA: StartSingleTimer = StartSingleTimer("KeyA", 100.millis)
+  val counterAddA: CounterAdd = CounterAdd("KeyA")
+  val cancelTimerA: CancelTimer = CancelTimer("KeyA")
 
   it should "schedule a single message" in {
     val count: Int =
       fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         (parentActor ! startTimerA) >>
-          expectMsgs(trackerActor, 150.millis)(counterAddA)
+          receiveExpectedMessages(Seq(startTimerA, counterAddA), 150.millis)(trackerActor)
       }
 
     count shouldEqual 1
@@ -61,30 +53,28 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
   it should "schedule repeated messages" in {
     val count: Int =
       fixture(TimedActor.apply) { case FixtureParams(actorSystem, parentActor, trackerActor) =>
-        (parentActor ! StartFixedDelayTimer(KeyA, 150.millis)) >>
-          expectMsgs(trackerActor, 500.millis)(ArraySeq.fill(3)(counterAddA): _*) >>
-          (parentActor ! CancelTimer(KeyA)) >>
+        val startFixedDelayTimer = StartFixedDelayTimer("KeyA", 150.millis)
+
+        (parentActor ! startFixedDelayTimer) >>
+          receiveExpectedMessages(startFixedDelayTimer +: Seq.fill(3)(counterAddA), 500.millis)(trackerActor) >>
+          (parentActor ! CancelTimer("KeyA")) >>
           actorSystem.waitForIdle(maxTimeout = 500.millis).void
       }
 
-    println(s"Received final count: ${count}")
     count shouldEqual 3
   }
 
   it should "schedule repeated messages after initial delay" in {
     val count: Int =
       fixture(TimedActor.apply) { case FixtureParams(actorSystem, parentActor, trackerActor) =>
-        (parentActor ! StartFixedAfterInitialDelayTimer(
-          KeyA,
-          initialDelay = 100.millis,
-          300.millis
-        )) >>
-          expectMsgs(trackerActor, 750.millis)(ArraySeq.fill(3)(counterAddA): _*) >>
-          (parentActor ! CancelTimer(KeyA)) >>
+        val startFixedAfterInitialDelayTimer = StartFixedAfterInitialDelayTimer("KeyA", initialDelay = 100.millis, 300.millis)
+
+        (parentActor ! startFixedAfterInitialDelayTimer) >>
+          receiveExpectedMessages(startFixedAfterInitialDelayTimer +: Seq.fill(3)(counterAddA), 750.millis)(trackerActor) >>
+          (parentActor ! cancelTimerA) >>
           actorSystem.waitForIdle(maxTimeout = 500.millis).void
       }
 
-    println(s"Received final count: ${count}")
     count shouldEqual 3
   }
 
@@ -94,7 +84,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
         (parentActor ! startTimerA) >>
           (parentActor ! startTimerA) >>
           (parentActor ! startTimerA) >>
-          expectMsgs(trackerActor, 150.millis)(counterAddA)
+          receiveExpectedMessages(Seq.fill(3)(startTimerA) :+ counterAddA, 300.millis)(trackerActor)
       }
 
     count shouldEqual 1
@@ -103,9 +93,10 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
   it should "support timers with different keys" in {
     val count: Int =
       fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
+        val startTimerB = StartSingleTimer("KeyB", 150.millis)
         (parentActor ! startTimerA) >>
-          (parentActor ! StartSingleTimer(KeyB, 150.millis)) >>
-          expectMsgs(trackerActor, 200.millis)(counterAddA, CounterAdd(KeyB))
+          (parentActor ! startTimerB) >>
+          receiveExpectedMessages(Seq(startTimerA, startTimerB, counterAddA, CounterAdd("KeyB")), 500.millis)(trackerActor)
       }
 
     count shouldEqual 2
@@ -115,8 +106,8 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
     val count: Int =
       fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         (parentActor ! startTimerA) >>
-          (parentActor ! CancelTimer(KeyA)) >>
-          expectNoMsg(trackerActor, 150.millis)
+          (parentActor ! cancelTimerA) >>
+          receiveExpectedMessages(Seq(startTimerA, cancelTimerA), 500.millis)(trackerActor)
       }
 
     count shouldEqual 0
@@ -127,7 +118,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
       fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         (parentActor ! startTimerA) >>
           (parentActor ! RestartCommand) >>
-          expectNoMsg(trackerActor, 150.millis)
+          receiveExpectedMessages(Seq(startTimerA, RestartCommand), 500.millis)(trackerActor)
       }
 
     count shouldEqual 0
@@ -138,7 +129,7 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
       fixture(TimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         (parentActor ! startTimerA) >>
           (parentActor ! StopCommand) >>
-          expectNoMsg(trackerActor, 150.millis)
+          receiveExpectedMessages(Seq(startTimerA, StopCommand), 500.millis)(trackerActor)
       }
 
     count shouldEqual 0
@@ -149,65 +140,24 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
       fixture(ReplyingTimedActor.apply) { case FixtureParams(_, parentActor, trackerActor) =>
         for {
           reply <- parentActor ? startTimerA
-          _ <- expectMsgs(trackerActor, 150.millis)(counterAddA)
+          _ <- receiveExpectedMessages(Seq(startTimerA, counterAddA), 500.millis)(trackerActor)
         } yield reply shouldEqual Ok
       }
 
     count shouldEqual 1
   }
 
-  it should "support tracking actor" in {
-    ActorSystem[IO]()
-      .use { actorSystem =>
-        for {
-          timerGenRef <- Timers.initGenRef[IO]
-          timersRef <- Timers.initTimersRef[IO, String]
-          cache <- ActorRefs
-            .empty[IO]
-            .map(
-              _.copy(
-                timerGenRef = timerGenRef,
-                timersRef = timersRef
-              )
-            )
-          stableName = "tracker"
-          cacheMap <- Ref.of[IO, Map[String, ActorRefs[IO]]](Map(stableName -> cache))
-          actorRef <- actorSystem.actorOf(
-            TrackingActor.create[IO, Any, Any](
-              cache = cacheMap,
-              stableName = stableName,
-              proxy =
-                IndependentTimerActor(100.millis, 550.millis, timerGenRef, timersRef).widen[Any]
-            )
-          )
-
-          result <-
-            for {
-              receivedMessage <- receiveWhile(actorRef, 1.second) { case req: Request =>
-                req
-              }
-            } yield {
-              receivedMessage.distinct should have size 2
-              receivedMessage shouldBe Seq(Hello, Hello, Hello, Hello, Hello, Enough)
-            }
-
-        } yield result
-      }
-      .unsafeToFuture()
-  }
-
   private case class FixtureParams[Response](
       actorSystem: ActorSystem[IO],
-      parentActor: ReplyingActorRef[IO, TimerMsg, Response],
-      trackerActor: ActorRef[IO, Any]
+      parentActor: TimedActorRef[Response],
+      trackerActor: TimedActorRef[Response]
   )
 
   private def fixture[Response](
       createF: (
           Ref[IO, Int],
-          ActorRef[IO, Any],
           Ref[IO, Int],
-          Ref[IO, Timers.TimerMap[IO, Key]]
+          Ref[IO, Timers.TimerMap[IO, String]]
       ) => ReplyingActor[IO, TimerMsg, Response]
   )(test: FixtureParams[Any] => IO[Unit]): Int = {
 
@@ -223,22 +173,31 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
         ActorSystem[IO]("timers", deadLetterListener(countRef))
           .use { system =>
             for {
-              trackerActor <-
-                system.actorOf(
-                  ReplyingActor
-                    .ignoring[IO, Any]("Timers test tracker actor")
-                    .trackWithCache("Timers test tracker actor")
-                )
               timerGenRef <- Timers.initGenRef[IO]
-              timersRef <- Timers.initTimersRef[IO, Key]
+              timersRef <- Timers.initTimersRef[IO, String]
               timedActorRef <- Ref.of[IO, Option[TimedActorRef[Response]]](Option.empty)
+              cache <- ActorRefs
+                .empty[IO]
+                .map(
+                  _.copy(
+                    timerGenRef = timerGenRef,
+                    timersRef = timersRef
+                  )
+                )
+              stableName = UUID.randomUUID().toString
+              cacheMap <- Ref.of[IO, Map[String, ActorRefs[IO]]](Map(stableName -> cache))
               parentActor <-
                 system.replyingActorOf(
                   new ParentActor(timedActorRef) {
-                    override def create: ReplyingActor[IO, TimerMsg, Response] =
-                      createF.apply(countRef, trackerActor, timerGenRef, timersRef)
+                    override def create: IO[ReplyingActor[IO, TimerMsg, Response]] =
+                      TrackingActor.create[IO, TimerMsg, Response](
+                        cache = cacheMap,
+                        stableName = stableName,
+                        proxy = createF.apply(countRef, timerGenRef, timersRef)
+                      )
                   }
                 )
+              trackerActor <- timedActorRef.get.map(_.get)
               _ <- test(FixtureParams(system, parentActor, trackerActor))
               count <- countRef.get
             } yield count
@@ -246,28 +205,33 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
       }
       .unsafeRunSync()
   }
+
+  private def receiveExpectedMessages[Response](
+    expectedMessages: Seq[TimerMsg],
+    timeout: FiniteDuration
+  )(trackerActor: TimedActorRef[Response]): IO[Unit] =
+    receiveWhile(trackerActor, timeout)({ case req: TimerMsg => req })
+      .map(_ should contain theSameElementsAs expectedMessages)
+      .void
+
 }
 
 object TimersTest {
   sealed trait TimerMsg
-  case class StartSingleTimer(key: Key, delay: FiniteDuration) extends TimerMsg
-  case class StartFixedDelayTimer(key: Key, delay: FiniteDuration) extends TimerMsg
+  case class StartSingleTimer(key: String, delay: FiniteDuration) extends TimerMsg
+  case class StartFixedDelayTimer(key: String, delay: FiniteDuration) extends TimerMsg
   case class StartFixedAfterInitialDelayTimer(
-      key: Key,
+      key: String,
       initialDelay: FiniteDuration,
       delay: FiniteDuration
   ) extends TimerMsg
-  case class CancelTimer(key: Key) extends TimerMsg
-  case class CounterAdd(source: Key) extends TimerMsg
+  case class CancelTimer(key: String) extends TimerMsg
+  case class CounterAdd(source: String) extends TimerMsg
   case object RestartCommand extends TimerMsg
   case object StopCommand extends TimerMsg
 
   case object RestartException extends Exception("restart!")
   case object StopException extends Exception("stop!")
-
-  sealed trait Key
-  case object KeyA extends Key
-  case object KeyB extends Key
 
   sealed trait TimerResponse
   case object Ok extends TimerResponse
@@ -275,11 +239,10 @@ object TimersTest {
 
   case class TimedActor(
       countRef: Ref[IO, Int],
-      trackerActor: ActorRef[IO, Any],
       timerGenRef: Ref[IO, Int],
-      timersRef: Ref[IO, Map[Key, TimerSchedulerImpl.StoredTimer[IO]]]
+      timersRef: Ref[IO, TimerMap[IO, String]]
   ) extends Actor[IO, TimerMsg]
-      with Timers[IO, TimerMsg, Any, Key] {
+      with Timers[IO, TimerMsg, Any, String] {
     override val asyncEvidence: Async[IO] = implicitly[Async[IO]]
 
     override def receive: Receive[IO, TimerMsg] = {
@@ -289,7 +252,7 @@ object TimersTest {
       case StartFixedAfterInitialDelayTimer(key, initialDelay, delay) =>
         timers.startTimerWithFixedDelay(key, CounterAdd(key), initialDelay, delay)
       case CancelTimer(key) => timers.cancel(key)
-      case msg: CounterAdd  => countRef.update(_ + 1) >> (trackerActor ! msg)
+      case _: CounterAdd    => countRef.update(_ + 1)
       case RestartCommand   => IO.raiseError(RestartException)
       case StopCommand      => IO.raiseError(StopException)
     }
@@ -297,11 +260,10 @@ object TimersTest {
 
   case class ReplyingTimedActor(
       countRef: Ref[IO, Int],
-      trackerActor: ActorRef[IO, Any],
       timerGenRef: Ref[IO, Int],
-      timersRef: Ref[IO, Map[Key, TimerSchedulerImpl.StoredTimer[IO]]]
+      timersRef: Ref[IO, TimerMap[IO, String]]
   ) extends ReplyingActor[IO, TimerMsg, TimerResponse]
-      with Timers[IO, TimerMsg, TimerResponse, Key] {
+      with Timers[IO, TimerMsg, TimerResponse, String] {
     override val asyncEvidence: Async[IO] = implicitly[Async[IO]]
 
     override def receive: ReplyingReceive[IO, TimerMsg, TimerResponse] = {
@@ -312,7 +274,7 @@ object TimersTest {
       case StartFixedAfterInitialDelayTimer(key, initialDelay, delay) =>
         timers.startTimerWithFixedDelay(key, CounterAdd(key), initialDelay, delay).as(Ok)
       case CancelTimer(key) => timers.cancel(key).as(Ok)
-      case msg: CounterAdd  => (countRef.update(_ + 1) >> (trackerActor ! msg)).as(Ok)
+      case _: CounterAdd    => IO.println("CounterAdd received") >> countRef.update(_ + 1).as(Ok)
       case RestartCommand   => IO.raiseError(RestartException).as(NotOk)
       case StopCommand      => IO.raiseError(StopException).as(NotOk)
     }
@@ -321,7 +283,7 @@ object TimersTest {
   type TimedActorRef[Response] = ReplyingActorRef[IO, TimerMsg, Response]
 
   abstract class ParentActor[Response](timedActorRef: Ref[IO, Option[TimedActorRef[Response]]])
-      extends ReplyingActor[IO, TimerMsg, Response] {
+      extends ReplyingActor[IO, TimerMsg, Any] {
     override def preStart: IO[Unit] =
       getOrCreateChild >> super.preStart
 
@@ -342,36 +304,7 @@ object TimersTest {
         _ <- timedActorRef.set(Some(ref))
       } yield ref
 
-    def create: ReplyingActor[IO, TimerMsg, Response]
+    def create: IO[ReplyingActor[IO, TimerMsg, Response]]
   }
 
-  trait Request
-  case object Hello extends Request
-  case object Enough extends Request
-
-  /** Differs from the other TimedActors in this object  */
-  case class IndependentTimerActor(
-      interval: FiniteDuration,
-      stopAfter: FiniteDuration,
-      timerGenRef: Ref[IO, Int],
-      timersRef: Ref[IO, Timers.TimerMap[IO, String]]
-  ) extends Actor[IO, Request]
-      with Timers[IO, Request, Any, String] {
-
-    implicit def asyncEvidence: Async[IO] = cats.effect.IO.asyncForIO
-
-    override def receive: Receive[IO, Request] = {
-      case Hello =>
-        IO.println(s"Hello, World! Another $interval has passed.")
-      case Enough =>
-        IO.println(s"Ok, that's enough") *>
-          timers.cancel("My Timer!") *>
-          context.stop(self)
-    }
-
-    override def preStart: IO[Unit] =
-      timers.startTimerWithFixedDelay("My Timer!", Hello, interval) *>
-        timers.startSingleTimer("Somebody stop me!", Enough, stopAfter)
-
-  }
 }
