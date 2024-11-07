@@ -26,7 +26,15 @@ import com.suprnation.actor.debug.TrackingActor.ActorRefs
 import com.suprnation.actor.event.Debug
 import com.suprnation.actor.test.TestKit
 import com.suprnation.actor.timers.TimersTest._
-import com.suprnation.actor.{ActorSystem, DeadLetter, OneForOneStrategy, ReplyingActor, ReplyingActorRef, SupervisionStrategy, Timers}
+import com.suprnation.actor.{
+  ActorSystem,
+  DeadLetter,
+  OneForOneStrategy,
+  ReplyingActor,
+  ReplyingActorRef,
+  SupervisionStrategy,
+  Timers
+}
 import com.suprnation.typelevel.actors.syntax.ActorSystemDebugOps
 import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
@@ -56,7 +64,10 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
         val startFixedDelayTimer = StartFixedDelayTimer("KeyA", 150.millis)
 
         (parentActor ! startFixedDelayTimer) >>
-          receiveExpectedMessages(startFixedDelayTimer +: Seq.fill(3)(counterAddA), 500.millis)(trackerActor) >>
+          receiveExpectedMessages(
+            startFixedDelayTimer +: Seq.fill(3)(counterAddA),
+            500.millis
+          )(trackerActor) >>
           (parentActor ! CancelTimer("KeyA")) >>
           actorSystem.waitForIdle(maxTimeout = 500.millis).void
       }
@@ -67,10 +78,14 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
   it should "schedule repeated messages after initial delay" in {
     val count: Int =
       fixture(TimedActor.apply) { case FixtureParams(actorSystem, parentActor, trackerActor) =>
-        val startFixedAfterInitialDelayTimer = StartFixedAfterInitialDelayTimer("KeyA", initialDelay = 100.millis, 300.millis)
+        val startFixedAfterInitialDelayTimer =
+          StartFixedAfterInitialDelayTimer("KeyA", initialDelay = 100.millis, 300.millis)
 
         (parentActor ! startFixedAfterInitialDelayTimer) >>
-          receiveExpectedMessages(startFixedAfterInitialDelayTimer +: Seq.fill(3)(counterAddA), 750.millis)(trackerActor) >>
+          receiveExpectedMessages(
+            startFixedAfterInitialDelayTimer +: Seq.fill(3)(counterAddA),
+            750.millis
+          )(trackerActor) >>
           (parentActor ! cancelTimerA) >>
           actorSystem.waitForIdle(maxTimeout = 500.millis).void
       }
@@ -96,7 +111,10 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
         val startTimerB = StartSingleTimer("KeyB", 150.millis)
         (parentActor ! startTimerA) >>
           (parentActor ! startTimerB) >>
-          receiveExpectedMessages(Seq(startTimerA, startTimerB, counterAddA, CounterAdd("KeyB")), 500.millis)(trackerActor)
+          receiveExpectedMessages(
+            Seq(startTimerA, startTimerB, counterAddA, CounterAdd("KeyB")),
+            500.millis
+          )(trackerActor)
       }
 
     count shouldEqual 2
@@ -207,10 +225,10 @@ class TimerSpec extends AsyncFlatSpec with Matchers with TestKit {
   }
 
   private def receiveExpectedMessages[Response](
-    expectedMessages: Seq[TimerMsg],
-    timeout: FiniteDuration
+      expectedMessages: Seq[TimerMsg],
+      timeout: FiniteDuration
   )(trackerActor: TimedActorRef[Response]): IO[Unit] =
-    receiveWhile(trackerActor, timeout)({ case req: TimerMsg => req })
+    receiveWhile(trackerActor, timeout) { case req: TimerMsg => req }
       .map(_ should contain theSameElementsAs expectedMessages)
       .void
 
