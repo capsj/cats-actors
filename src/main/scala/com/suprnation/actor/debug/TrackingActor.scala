@@ -17,7 +17,7 @@
 package com.suprnation.actor.debug
 
 import cats.Parallel
-import cats.effect.{Async, Concurrent, Ref, Temporal}
+import cats.effect.{Async, Ref}
 import cats.implicits._
 import com.suprnation.actor.Actor.ReplyingReceive
 import com.suprnation.actor.utils.Unsafe
@@ -63,7 +63,7 @@ object TrackingActor {
   def create[F[+_]: Async: Parallel, Request, Response](
       proxy: ReplyingActor[F, Request, Response]
   ): F[TrackingActor[F, Request, Response]] =
-    createInner[F, Request, Response](proxy)(_ => Concurrent[F].unit)
+    createInner[F, Request, Response](proxy)(_ => Async[F].unit)
 
   def create[F[+_]: Async: Parallel, Request, Response](
       cache: Ref[F, Map[String, ActorRefs[F]]],
@@ -94,7 +94,7 @@ object TrackingActor {
       }
     }
 
-  private def createInner[F[+_]: Async: Parallel: Concurrent: Temporal, Request, Response](
+  private def createInner[F[+_]: Async: Parallel, Request, Response](
       proxy: ReplyingActor[F, Request, Response]
   )(preCreateFn: ActorRefs[F] => F[Unit]): F[TrackingActor[F, Request, Response]] =
     ActorRefs.empty.flatMap { cache =>
@@ -118,7 +118,7 @@ object TrackingActor {
     }
 }
 
-final case class TrackingActor[F[+_]: Async: Parallel: Concurrent: Temporal, Request, Response](
+final case class TrackingActor[F[+_], Request, Response](
     initCountRef: Ref[F, Int],
     preStartCountRef: Ref[F, Int],
     postStopCountRef: Ref[F, Int],
@@ -132,10 +132,10 @@ final case class TrackingActor[F[+_]: Async: Parallel: Concurrent: Temporal, Req
     timerGenRef: Ref[F, Int],
     timersRef: Ref[F, Timers.TimerMap[F, String]],
     proxy: ReplyingActor[F, Request, Response]
-) extends ReplyingActor[F, Request, Response]
+)(implicit val asyncEvidence: Async[F], parallelEvidence: Parallel[F])
+  extends ReplyingActor[F, Request, Response]
     with ActorConfig
     with Timers[F, Request, Response, String] {
-  override val asyncEvidence: Async[F] = implicitly[Async[F]]
 
   override val receive: ReplyingReceive[F, Request, Response] = { case m =>
     messageBufferRef.update(_ :+ m) >> proxy.receive(m)
