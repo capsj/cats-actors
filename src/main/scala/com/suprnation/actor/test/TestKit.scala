@@ -55,14 +55,9 @@ trait TestKit {
       messages
     )
 
-  /** Waits for a set of messages to be received by the specified actor, checking
-    * that each expected message is present in the actor's message buffer, irrespective
-    * of order.
-    *
-    * This method ensures that the actor’s message buffer contains the specified messages
-    * at least once each, but it does not assert exclusivity. In other words, additional
-    * messages in the buffer or multiple occurrences of the same message will not cause
-    * this method to fail.
+  /** Waits and asserts for a set of messages to be received by the provided actor.
+    * This method ensures that the actor’s message buffer contains all messages, but it does not assert exclusivity.
+    * Additional messages in the buffer will not cause this method to fail.
     */
   def expectMsgSet[F[+_]: Async: Console](
       actor: ActorRef[F, ?],
